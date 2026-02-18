@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Participant } from '../types';
+import { Participant } from '../types.ts';
 
 interface NameManagerProps {
   names: Participant[];
   setNames: (names: Participant[] | ((prev: Participant[]) => Participant[])) => void;
 }
-
+// ... 其餘代碼保持不變 ...
 const MOCK_DATA_SET = [
   "王小明", "李美玲", "張大華", "陳靜宜", "林智強", 
   "周杰倫", "蔡依林", "五月天", "郭台銘", "張忠謀", 
@@ -213,5 +213,4 @@ const NameManager: React.FC<NameManagerProps> = ({ names, setNames }) => {
     </div>
   );
 };
-
 export default NameManager;

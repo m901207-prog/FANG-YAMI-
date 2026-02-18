@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Participant, LuckyDrawRecord } from '../types';
+import { Participant, LuckyDrawRecord } from '../types.ts';
 
 declare var confetti: any;
-
+// ... 其餘代碼保持不變 ...
 interface LuckyDrawProps {
   names: Participant[];
   setNames: (names: Participant[]) => void;
@@ -356,5 +356,4 @@ const LuckyDraw: React.FC<LuckyDrawProps> = ({ names, setNames, onBackToHome }) 
     </div>
   );
 };
-
 export default LuckyDraw;

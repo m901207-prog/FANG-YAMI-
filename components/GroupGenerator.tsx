@@ -1,12 +1,12 @@
 
 import React, { useState } from 'react';
-import { Participant, GroupResult } from '../types';
-import { generateCreativeGroupNames, CreativeGroupName } from '../services/geminiService';
+import { Participant, GroupResult } from '../types.ts';
+import { generateCreativeGroupNames, CreativeGroupName } from '../services/geminiService.ts';
 
 interface GroupGeneratorProps {
   names: Participant[];
 }
-
+// ... 其餘代碼保持不變 ...
 const GroupGenerator: React.FC<GroupGeneratorProps> = ({ names }) => {
   const [groupSize, setGroupSize] = useState(4);
   const [isLoading, setIsLoading] = useState(false);
@@ -123,5 +123,4 @@ const GroupGenerator: React.FC<GroupGeneratorProps> = ({ names }) => {
     </div>
   );
 };
-
 export default GroupGenerator;

@@ -1,9 +1,9 @@
 
 import React, { useState } from 'react';
-import NameManager from './components/NameManager';
-import LuckyDraw from './components/LuckyDraw';
-import GroupGenerator from './components/GroupGenerator';
-import { Participant, AppTab } from './types';
+import NameManager from './components/NameManager.tsx';
+import LuckyDraw from './components/LuckyDraw.tsx';
+import GroupGenerator from './components/GroupGenerator.tsx';
+import { Participant, AppTab } from './types.ts';
 
 const App: React.FC = () => {
   const [names, setNames] = useState<Participant[]>([]);

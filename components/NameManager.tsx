@@ -6,7 +6,7 @@ interface NameManagerProps {
   names: Participant[];
   setNames: (names: Participant[] | ((prev: Participant[]) => Participant[])) => void;
 }
-// ... 其餘代碼保持不變 ...
+
 const MOCK_DATA_SET = [
   "王小明", "李美玲", "張大華", "陳靜宜", "林智強", 
   "周杰倫", "蔡依林", "五月天", "郭台銘", "張忠謀", 
@@ -38,7 +38,7 @@ const NameManager: React.FC<NameManagerProps> = ({ names, setNames }) => {
     if (currentIsDuplicateStr !== nextIsDuplicateStr) {
       setNames(updatedNames);
     }
-  }, [names.length, setNames]);
+  }, [names.length]); // 僅在長度變化時檢測重複，避免 setNames 無限迴圈
 
   const addParticipants = (rawNames: string[]) => {
     const newParticipants = rawNames
@@ -100,7 +100,20 @@ const NameManager: React.FC<NameManagerProps> = ({ names, setNames }) => {
   };
 
   const clearAllNames = () => {
-    setNames([]);
+    if (confirm("確定要清空所有名單嗎？此動作不可撤銷。")) {
+      setNames([]);
+    }
+  };
+
+  const exportNames = () => {
+    if (names.length === 0) return;
+    const csvContent = "姓名\n" + names.map(p => p.name).join("\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `PLAYER_LIST_${new Date().toISOString().slice(0,10)}.csv`);
+    link.click();
   };
 
   const duplicateCount = names.filter(p => p.isDuplicate).length;
@@ -108,7 +121,7 @@ const NameManager: React.FC<NameManagerProps> = ({ names, setNames }) => {
   return (
     <div className="flex flex-col gap-8 w-full relative">
       
-      {/* 頂部：匯入區塊 - 問號箱風格 */}
+      {/* 頂部：匯入區塊 */}
       <div className={`transition-all duration-700 ease-in-out overflow-hidden ${isPreviewMaximized ? 'max-h-0 opacity-0 pointer-events-none' : 'max-h-[1200px] opacity-100'}`}>
         <div className="glass-card p-8 rounded-[1.5rem] relative overflow-hidden bg-[#FBD000]/10">
           <div className="flex justify-between items-center">
@@ -159,7 +172,7 @@ const NameManager: React.FC<NameManagerProps> = ({ names, setNames }) => {
         </div>
       </div>
 
-      {/* 下方：名單預覽區塊 - 列表 */}
+      {/* 下方：名單預覽區塊 */}
       <div className={`transition-all duration-700 ease-in-out w-full ${isPreviewMaximized ? 'h-[calc(100vh-200px)]' : 'min-h-[500px]'}`}>
         <div className={`glass-card p-8 rounded-[1.5rem] flex flex-col h-full border-4 border-black ${isPreviewMaximized ? 'bg-white' : ''}`}>
           <div className="flex justify-between items-center mb-8">
@@ -179,11 +192,18 @@ const NameManager: React.FC<NameManagerProps> = ({ names, setNames }) => {
               </h3>
             </div>
             
-            {names.length > 0 && (
-              <button onClick={clearAllNames} className="px-6 py-2.5 bg-white text-[#E4000F] hover:bg-[#E4000F] hover:text-white border-4 border-[#E4000F] rounded-xl text-sm font-black transition-all">
-                GAME OVER (清空)
-              </button>
-            )}
+            <div className="flex gap-4">
+              {names.length > 0 && (
+                <>
+                  <button onClick={exportNames} className="px-6 py-2.5 bg-[#00A230] text-white hover:bg-[#008026] border-4 border-black rounded-xl text-sm font-black transition-all shadow-[4px_4px_0px_#000] active:shadow-none active:translate-y-1">
+                    💾 導出目前名單 (手動存檔)
+                  </button>
+                  <button onClick={clearAllNames} className="px-6 py-2.5 bg-white text-[#E4000F] hover:bg-[#E4000F] hover:text-white border-4 border-[#E4000F] rounded-xl text-sm font-black transition-all">
+                    GAME OVER (清空)
+                  </button>
+                </>
+              )}
+            </div>
           </div>
           
           <div ref={scrollRef} className={`flex-grow overflow-y-auto custom-scrollbar pr-2 grid gap-5 ${isPreviewMaximized ? 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4'}`}>

@@ -1,13 +1,34 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import NameManager from './components/NameManager.tsx';
 import LuckyDraw from './components/LuckyDraw.tsx';
 import GroupGenerator from './components/GroupGenerator.tsx';
 import { Participant, AppTab } from './types.ts';
 
+const STORAGE_KEY = 'lucky_toolbox_names_v1';
+
 const App: React.FC = () => {
-  const [names, setNames] = useState<Participant[]>([]);
+  // 從 LocalStorage 初始化名單
+  const [names, setNames] = useState<Participant[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.NAME_MANAGEMENT);
+  const [saveStatus, setSaveStatus] = useState<'saving' | 'saved'>('saved');
+
+  // 當名單變更時自動存檔
+  useEffect(() => {
+    setSaveStatus('saving');
+    const timer = setTimeout(() => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(names));
+      setSaveStatus('saved');
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [names]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -20,7 +41,14 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4 group cursor-pointer" onClick={() => setActiveTab(AppTab.NAME_MANAGEMENT)}>
             <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-[#E4000F] font-black text-2xl border-4 border-black shadow-[4px_4px_0px_#000] group-hover:scale-110 transition-transform">M</div>
             <div>
-              <h1 className="text-xl font-black text-white leading-none tracking-wider">幸運的抽獎箱</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-black text-white leading-none tracking-wider">幸運的抽獎箱</h1>
+                {/* 存檔狀態燈 */}
+                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border-2 border-black text-[9px] font-black uppercase transition-colors ${saveStatus === 'saved' ? 'bg-[#00A230] text-white' : 'bg-[#FBD000] text-black animate-pulse'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full bg-white ${saveStatus === 'saving' ? 'animate-ping' : ''}`}></span>
+                  {saveStatus === 'saved' ? 'Auto-Saved' : 'Saving...'}
+                </div>
+              </div>
               <span className="text-[10px] font-bold text-[#FBD000] uppercase tracking-[0.3em]">Lucky Toolbox</span>
             </div>
           </div>

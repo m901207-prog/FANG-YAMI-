@@ -1,9 +1,12 @@
 
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// 獲取 API Key 並初始化
+const getAI = () => {
+  const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : '';
+  return new GoogleGenAI({ apiKey: apiKey || '' });
+};
 
-// Define interface for AI generated group names to provide strong typing
 export interface CreativeGroupName {
   name: string;
   description: string;
@@ -11,16 +14,15 @@ export interface CreativeGroupName {
 
 /**
  * Generates creative group names using Gemini AI.
- * Returns a list of group names and descriptions.
  */
 export const generateCreativeGroupNames = async (count: number, context?: string): Promise<CreativeGroupName[]> => {
+  const ai = getAI();
   const prompt = `
     你是一位專業的 HR 活動策劃師。
     任務：為一場公司活動生成 ${count} 個小組的名稱與描述。
     
-    命名規範（非常重要）：
-    - 所有小組名稱必須嚴格按照「第一組」、「第二組」、「第三組」... 的序號排列。
-    - 嚴禁使用其他創意名稱作為標題，標題必須僅包含組別序號。
+    命名規範：
+    - 所有小組名稱必須嚴格按照「第一組」、「第二組」... 的序號排列。
     
     描述規範：
     - 根據活動背景「${context || "團隊建設日"}」，為每一組寫一段簡短、專業且具備激勵性的描述（繁體中文）。
@@ -28,38 +30,31 @@ export const generateCreativeGroupNames = async (count: number, context?: string
     請以 JSON 格式回傳，結構為：[{"name": "第一組", "description": "..."}, ...]
   `;
 
-  const response: GenerateContentResponse = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING, description: "小組序號名稱，例如：第一組" },
-            description: { type: Type.STRING, description: "針對該組的勵志描述" }
-          },
-          required: ["name", "description"]
+  try {
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              description: { type: Type.STRING }
+            },
+            required: ["name", "description"]
+          }
         }
       }
-    }
-  });
+    });
 
-  const responseText = response.text?.trim();
-  if (!responseText) {
-    return Array.from({ length: count }, (_, i) => ({
-      name: `${getChineseNumber(i + 1)}組`,
-      description: "充滿活力與專業精神的團隊"
-    }));
-  }
-
-  try {
-    const parsed = JSON.parse(responseText);
-    return parsed as CreativeGroupName[];
+    const responseText = response.text?.trim();
+    if (!responseText) throw new Error("Empty response");
+    return JSON.parse(responseText) as CreativeGroupName[];
   } catch (e) {
-    console.error("Failed to parse AI response", e);
+    console.error("AI Grouping failed, using fallback", e);
     return Array.from({ length: count }, (_, i) => ({
       name: `${getChineseNumber(i + 1)}組`,
       description: "充滿活力與專業精神的團隊"
@@ -67,9 +62,7 @@ export const generateCreativeGroupNames = async (count: number, context?: string
   }
 };
 
-// 輔助函數：將數字轉換為中文序號
 function getChineseNumber(n: number): string {
   const chineseNums = ['零', '第一', '第二', '第三', '第四', '第五', '第六', '第七', '第八', '第九', '第十'];
-  if (n <= 10) return chineseNums[n];
-  return `第 ${n} `;
+  return n <= 10 ? chineseNums[n] : `第 ${n} `;
 }

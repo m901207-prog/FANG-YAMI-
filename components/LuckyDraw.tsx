@@ -3,354 +3,295 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Participant, LuckyDrawRecord } from '../types.ts';
 
 declare var confetti: any;
-// ... 其餘代碼保持不變 ...
-interface LuckyDrawProps {
-  names: Participant[];
-  setNames: (names: Participant[]) => void;
-  onBackToHome?: () => void;
-}
 
-const TENSE_MUSIC_URL = 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'; 
-const WIN_SOUND_URL = 'https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3'; 
-const DING_SOUND_URL = 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'; 
+const SOUNDS = {
+  TENSE: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
+  WIN: 'https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3',
+  DING: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'
+};
 
-const LuckyDraw: React.FC<LuckyDrawProps> = ({ names, setNames, onBackToHome }) => {
-  const [isSpinning, setIsSpinning] = useState(false);
-  const [currentWinners, setCurrentWinners] = useState<string[]>([]);
-  const [currentPrizeDisplay, setCurrentPrizeDisplay] = useState('');
-  const [history, setHistory] = useState<LuckyDrawRecord[]>([]);
+const LuckyDraw: React.FC<{ names: Participant[]; setNames: (n: Participant[]) => void }> = ({ names, setNames }) => {
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [winners, setWinners] = useState<string[]>([]);
   
-  // 抽獎設定
-  const [prizeName, setPrizeName] = useState('幸運金幣獎');
-  const [drawCount, setDrawCount] = useState(1);
+  // 5 個獎項槽位，最後一個預設為驚喜加碼獎
+  const [prizeSlots, setPrizeSlots] = useState<string[]>(['', '', '', '', '🎁 驚喜加碼獎']);
+  const [selectedPrizeIndex, setSelectedPrizeIndex] = useState(4); // 預設選中最後一個
+  
+  const [count, setCount] = useState(1);
   const [allowRepeat, setAllowRepeat] = useState(false);
-  
-  const [displayIndex, setDisplayIndex] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
-  const [volume, setVolume] = useState(0.8); 
-  const [speechRate, setSpeechRate] = useState(1.0); 
-
-  const volumeRef = useRef(0.8);
-  const speechRateRef = useRef(1.0);
-  const isMutedRef = useRef(false);
-  
-  const timerRef = useRef<number | null>(null);
-  const visualTimerRef = useRef<number | null>(null);
-  const audioTenseRef = useRef<HTMLAudioElement | null>(null);
-  const audioWinRef = useRef<HTMLAudioElement | null>(null);
-  const audioDingRef = useRef<HTMLAudioElement | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [randomName, setRandomName] = useState('');
+  const [history, setHistory] = useState<LuckyDrawRecord[]>([]);
+
+  const audios = useRef<{ [key: string]: HTMLAudioElement }>({});
 
   useEffect(() => {
-    audioTenseRef.current = new Audio(TENSE_MUSIC_URL);
-    audioTenseRef.current.loop = true;
-    audioWinRef.current = new Audio(WIN_SOUND_URL);
-    audioDingRef.current = new Audio(DING_SOUND_URL);
-    
-    audioTenseRef.current.load();
-    audioWinRef.current.load();
-    audioDingRef.current.load();
-    
+    Object.entries(SOUNDS).forEach(([key, url]) => {
+      audios.current[key] = new Audio(url);
+    });
     return () => {
-      stopAllTimers();
-      audioTenseRef.current?.pause();
-      audioWinRef.current?.pause();
-      audioDingRef.current?.pause();
+      (Object.values(audios.current) as HTMLAudioElement[]).forEach(a => a.pause());
       window.speechSynthesis.cancel();
     };
   }, []);
 
-  useEffect(() => {
-    volumeRef.current = volume;
-    isMutedRef.current = isMuted;
-    if (audioTenseRef.current) {
-      audioTenseRef.current.muted = isMuted;
-      audioTenseRef.current.volume = volume * 0.25; 
-    }
-    if (audioWinRef.current) {
-      audioWinRef.current.muted = isMuted;
-      audioWinRef.current.volume = volume;
-    }
-    if (audioDingRef.current) {
-      audioDingRef.current.muted = isMuted;
-      audioDingRef.current.volume = Math.min(1.0, volume * 1.2); 
-    }
-  }, [isMuted, volume]);
-
-  useEffect(() => {
-    speechRateRef.current = speechRate;
-  }, [speechRate]);
-
-  const stopAllTimers = () => {
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-    if (visualTimerRef.current) window.clearTimeout(visualTimerRef.current);
+  const speak = (txt: string) => {
+    const u = new SpeechSynthesisUtterance(txt);
+    u.rate = 1.2; u.pitch = 1.1;
+    window.speechSynthesis.speak(u);
   };
 
-  const playDing = () => {
-    if (isMutedRef.current || !audioDingRef.current) return;
-    audioDingRef.current.currentTime = 0;
-    audioDingRef.current.play().catch(() => {});
+  const updatePrizeSlot = (index: number, value: string) => {
+    const newSlots = [...prizeSlots];
+    newSlots[index] = value;
+    setPrizeSlots(newSlots);
   };
 
-  const speak = (text: string, rateMultiplier: number = 1) => {
-    if (isMutedRef.current) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = speechRateRef.current * rateMultiplier;
-    utterance.pitch = 1.4 + (rateMultiplier * 0.1); 
-    utterance.volume = 1.0; 
-    window.speechSynthesis.speak(utterance);
+  const getEffectivePrizeName = (index: number) => {
+    return prizeSlots[index].trim() || `獎項 ${index + 1} (未填寫)`;
   };
 
   const startDraw = () => {
-    if (names.length === 0) {
-      alert("名單已空！");
-      return;
-    }
-    if (drawCount > names.length) {
-      alert(`剩餘人數不足以抽取 ${drawCount} 位中獎者！`);
-      return;
-    }
-    if (isSpinning) return;
-
-    setIsSpinning(true);
-    setCurrentWinners([]);
-    setCurrentPrizeDisplay('');
+    if (names.length === 0) return alert("名單為空！");
+    if (!allowRepeat && count > names.length) return alert(`剩餘名額不足以抽出 ${count} 人！`);
+    
+    setIsDrawing(true);
+    setWinners([]);
     setCountdown(null);
-    stopAllTimers();
 
-    if (audioTenseRef.current) {
-      audioTenseRef.current.currentTime = 0;
-      audioTenseRef.current.play().catch(() => {});
-    }
+    audios.current.TENSE.currentTime = 0;
+    audios.current.TENSE.loop = true;
+    audios.current.TENSE.play().catch(() => {});
 
-    const startVisualSpin = (interval: number) => {
-      const spin = () => {
-        setDisplayIndex(Math.floor(Math.random() * names.length));
-        visualTimerRef.current = window.setTimeout(spin, interval);
-      };
-      spin();
-    };
+    const spinInterval = setInterval(() => {
+      setRandomName(names[Math.floor(Math.random() * names.length)].name);
+    }, 60);
 
-    startVisualSpin(50);
-
-    const sequence: [number, number, number][] = [
-      [5, 1.0, 1.0],   
-      [4, 1.0, 1.0],   
-      [3, 0.75, 1.3],  
-      [2, 0.75, 1.3],  
-      [1, 0.5, 1.8]    
-    ];
-
-    let currentStep = 0;
-
-    const runSequence = () => {
-      if (currentStep < sequence.length) {
-        const [num, baseDelay, rateMult] = sequence[currentStep];
-        setCountdown(num);
-        playDing();
-        speak(num.toString(), rateMult);
-
-        stopAllTimers();
-        const visualInterval = 50 + (currentStep * 40);
-        startVisualSpin(visualInterval);
-
-        currentStep++;
-        const actualDelay = (baseDelay * 1000) / speechRateRef.current;
-        timerRef.current = window.setTimeout(runSequence, actualDelay);
+    const runCountdown = (n: number) => {
+      if (n > 0) {
+        setCountdown(n);
+        audios.current.DING.currentTime = 0;
+        audios.current.DING.play().catch(() => {});
+        speak(n.toString());
+        setTimeout(() => runCountdown(n - 1), 1000);
       } else {
-        const finalDelay = (500) / speechRateRef.current;
-        timerRef.current = window.setTimeout(revealWinner, finalDelay);
+        clearInterval(spinInterval);
+        finishDraw();
       }
     };
 
-    timerRef.current = window.setTimeout(runSequence, 1200);
+    runCountdown(3);
   };
 
-  const revealWinner = () => {
-    stopAllTimers();
-    if (audioTenseRef.current) audioTenseRef.current.pause();
+  const finishDraw = () => {
+    audios.current.TENSE.pause();
     
-    const pool = [...names];
-    const winners: string[] = [];
-    const winnerIds: string[] = [];
-
-    for (let i = 0; i < drawCount; i++) {
-      const winnerIndex = Math.floor(Math.random() * pool.length);
-      const winner = pool.splice(winnerIndex, 1)[0];
-      winners.push(winner.name);
-      winnerIds.push(winner.id);
+    let selected: Participant[] = [];
+    if (allowRepeat) {
+      for(let i=0; i<count; i++) {
+        selected.push(names[Math.floor(Math.random() * names.length)]);
+      }
+    } else {
+      const shuffled = [...names].sort(() => Math.random() - 0.5);
+      selected = shuffled.slice(0, count);
     }
     
-    setCurrentWinners(winners);
-    setCurrentPrizeDisplay(prizeName);
+    const winnerNames = selected.map(p => p.name);
+    const winnerIds = selected.map(p => p.id);
+    
+    setWinners(winnerNames);
     setCountdown(null);
-    setIsSpinning(false);
+    setIsDrawing(false);
 
-    const record: LuckyDrawRecord = {
+    audios.current.WIN.currentTime = 0;
+    audios.current.WIN.play().catch(() => {});
+    
+    const currentPrizeName = getEffectivePrizeName(selectedPrizeIndex);
+    
+    const h: LuckyDrawRecord = {
       id: Date.now().toString(),
-      prizeName: prizeName,
-      winners: winners,
+      prizeName: currentPrizeName,
+      winners: winnerNames,
       timestamp: new Date().toLocaleTimeString()
     };
-    setHistory(prev => [record, ...prev]);
+    setHistory(prev => [h, ...prev]);
 
-    if (audioWinRef.current) {
-      audioWinRef.current.currentTime = 0;
-      audioWinRef.current.play().catch(() => {});
-    }
-
-    triggerConfetti();
-
+    confetti({ 
+      particleCount: Math.min(200, 100 + winnerNames.length), 
+      spread: 80, 
+      origin: { y: 0.6 } 
+    });
+    
     if (!allowRepeat) {
       setNames(names.filter(n => !winnerIds.includes(n.id)));
     }
-  };
-
-  const triggerConfetti = () => {
-    const end = Date.now() + 3000;
-    const colors = ['#E4000F', '#0050AC', '#FBD000', '#00A230'];
-    (function frame() {
-      confetti({ particleCount: 4, angle: 60, spread: 65, origin: { x: 0 }, colors });
-      confetti({ particleCount: 4, angle: 120, spread: 65, origin: { x: 1 }, colors });
-      if (Date.now() < end) requestAnimationFrame(frame);
-    }());
-    confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors });
+    
+    if (winnerNames.length <= 5) {
+      speak(`恭喜中獎者：${winnerNames.join('、')}`);
+    } else {
+      speak(`恭喜以上 ${winnerNames.length} 位獲獎者！`);
+    }
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
+    <div className="max-w-6xl mx-auto space-y-12">
       <div className="text-center">
-        <h2 className="text-5xl font-black text-white drop-shadow-[4px_4px_0px_#000] tracking-wider flex items-center justify-center gap-4 mb-8">
-           <span className="text-5xl animate-bounce">⭐</span> 幸運大抽獎
-        </h2>
+        <h2 className="text-6xl font-black text-white italic drop-shadow-[6px_6px_0px_#000] mb-12 animate-bounce">⭐ LUCKY DRAW</h2>
         
-        {/* 控制與設定面板 - 經典藍白塊狀 */}
-        <div className="bg-white p-8 rounded-[1.5rem] border-4 border-black shadow-[8px_8px_0px_#000] grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
-          
-          <div className="flex flex-col gap-3">
-            <span className="text-[11px] font-black text-[#0050AC] uppercase tracking-widest px-1">獎項名稱</span>
-            <input type="text" value={prizeName} onChange={(e) => setPrizeName(e.target.value)} placeholder="例如：金幣獎" className="w-full px-5 py-3 bg-slate-50 border-2 border-black rounded-xl focus:border-[#FBD000] outline-none font-black text-slate-700" />
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <div className="flex justify-between px-1">
-              <span className="text-[11px] font-black text-[#0050AC] uppercase tracking-widest">抽取人數</span>
-              <span className="text-xs font-black text-[#E4000F]">{drawCount} PLAYERS</span>
-            </div>
-            <input type="range" min="1" max={Math.max(1, Math.min(20, names.length))} step="1" value={drawCount} onChange={(e) => setDrawCount(parseInt(e.target.value))} className="w-full h-3 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#E4000F]" />
-          </div>
-
-          <div className="flex flex-col gap-3">
-             <span className="text-[11px] font-black text-[#0050AC] uppercase tracking-widest">音量設定</span>
-             <div className="flex items-center gap-2">
-                <button onClick={() => setIsMuted(!isMuted)} className={`p-2 rounded-lg border-2 border-black transition-all ${isMuted ? 'bg-slate-300 text-white' : 'bg-[#FBD000] text-black'}`}>
-                  {isMuted ? '🔇' : '🔊'}
-                </button>
-                <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#0050AC]" />
-             </div>
-          </div>
-
-          <div className="flex items-center justify-center">
-             <label className="flex items-center gap-3 cursor-pointer select-none group">
-                <input type="checkbox" checked={allowRepeat} onChange={(e) => setAllowRepeat(e.target.checked)} className="w-6 h-6 border-4 border-black rounded-lg checked:bg-[#00A230] appearance-none" />
-                <span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">允許重複</span>
-              </label>
-          </div>
-
-        </div>
-      </div>
-
-      <div className="relative">
-        <div className="bg-[#0050AC] border-4 border-black p-10 rounded-[2rem] shadow-[8px_8px_0px_#000] flex flex-col items-center min-h-[500px]">
-          
-          <div className={`w-full flex-grow rounded-2xl mb-8 flex flex-col items-center justify-center overflow-hidden border-4 border-black relative transition-all duration-700 ${isSpinning ? 'bg-black/60' : 'bg-[#5C94FC] shadow-inner'}`}>
-            {isSpinning ? (
-              <div className="flex flex-col items-center text-center px-4 w-full h-full justify-center">
-                 <div className="text-4xl md:text-5xl font-black text-white/40 italic tracking-tighter mb-8 animate-pulse uppercase">
-                  {names[displayIndex]?.name}
-                </div>
-                {countdown !== null && (
-                  <div className="text-[14rem] font-black text-[#FBD000] drop-shadow-[6px_6px_0px_#000] leading-none animate-in zoom-in duration-300">
-                    {countdown}
+        <div className="bg-white border-8 border-black p-8 rounded-[3rem] shadow-[12px_12px_0px_#000] space-y-10">
+           
+           {/* Step 1: Prize Slots Configuration */}
+           <div className="text-left space-y-4">
+              <h3 className="text-sm font-black text-[#0050AC] flex items-center gap-2">
+                <span className="w-6 h-6 bg-[#0050AC] text-white rounded-full flex items-center justify-center text-[10px]">1</span>
+                配置獎項清單 (最多五個)
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                {prizeSlots.map((slot, idx) => (
+                  <div key={idx} className="relative group">
+                    <input 
+                      type="text"
+                      value={slot}
+                      placeholder={`獎項 ${idx + 1}`}
+                      onChange={(e) => updatePrizeSlot(idx, e.target.value)}
+                      className={`w-full px-4 py-3 border-4 rounded-xl font-black text-xs outline-none transition-all ${idx === 4 ? 'border-[#E4000F] bg-red-50' : 'border-[#FBD000] focus:bg-[#FBD000]/10'}`}
+                    />
+                    {idx === 4 && <div className="absolute -top-2 -right-2 bg-[#E4000F] text-white text-[8px] px-2 py-0.5 rounded-full font-black border-2 border-black">FIXED</div>}
                   </div>
-                )}
+                ))}
               </div>
-            ) : currentWinners.length > 0 ? (
-              <div className="text-center w-full px-8 animate-in fade-in zoom-in duration-500">
-                <div className="bg-[#FBD000] text-black px-8 py-3 border-4 border-black rounded-xl inline-block text-lg font-black tracking-widest uppercase mb-8 shadow-[4px_4px_0px_#000]">
-                  {currentPrizeDisplay} WINNERS!
+           </div>
+
+           <hr className="border-2 border-black border-dashed opacity-20" />
+
+           {/* Step 2: Drawing Settings */}
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
+              <div className="text-left space-y-2">
+                 <label className="text-[10px] font-black uppercase text-[#0050AC] flex items-center gap-2">
+                    <span className="w-5 h-5 bg-[#0050AC] text-white rounded-full flex items-center justify-center text-[8px]">2</span>
+                    選擇目前抽取的獎項
+                 </label>
+                 <div className="relative">
+                    <select 
+                      value={selectedPrizeIndex} 
+                      onChange={e => setSelectedPrizeIndex(parseInt(e.target.value))} 
+                      className="w-full px-6 py-4 border-4 border-black rounded-2xl font-black text-lg outline-none bg-white appearance-none cursor-pointer focus:bg-[#FBD000]/10 transition-colors"
+                    >
+                      {prizeSlots.map((_, idx) => (
+                        <option key={idx} value={idx}>
+                          {getEffectivePrizeName(idx)}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none font-black text-xl">▼</div>
+                 </div>
+              </div>
+
+              <div className="text-left space-y-2">
+                 <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-black uppercase text-slate-400">抽取人數</label>
+                    <span className="bg-black text-white px-2 py-1 rounded-md text-xs font-black">{count} 人</span>
+                 </div>
+                 <div className="pt-2">
+                  <input 
+                    type="range" 
+                    min="1" 
+                    max={Math.min(100, names.length || 1)} 
+                    value={count} 
+                    onChange={e => setCount(parseInt(e.target.value))} 
+                    className="w-full h-4 bg-slate-200 rounded-full appearance-none accent-[#E4000F] cursor-pointer" 
+                  />
+                  <div className="flex justify-between mt-1 text-[8px] font-black text-slate-300">
+                    <span>1</span>
+                    <span>50</span>
+                    <span>100</span>
+                  </div>
+                 </div>
+              </div>
+
+              <div className="text-left">
+                 <button 
+                  onClick={() => setAllowRepeat(!allowRepeat)}
+                  className={`w-full flex items-center justify-between px-6 py-4 border-4 border-black rounded-2xl font-black text-xs transition-all ${allowRepeat ? 'bg-[#00A230] text-white shadow-[4px_4px_0px_#000]' : 'bg-slate-100 text-slate-400'}`}
+                 >
+                   <span>允許重複中獎</span>
+                   <span className="text-lg font-black">{allowRepeat ? 'ON' : 'OFF'}</span>
+                 </button>
+              </div>
+           </div>
+
+           {/* Drawing Area */}
+           <div className={`w-full min-h-[420px] border-8 border-black rounded-[2rem] flex flex-col items-center justify-center transition-all ${isDrawing ? 'bg-black text-white' : 'bg-[#5C94FC] text-white'} relative overflow-hidden`}>
+              <div className="absolute top-6 left-8 bg-white/20 px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest text-white/70 border-2 border-white/10 z-20">
+                Current Prize: {getEffectivePrizeName(selectedPrizeIndex)}
+              </div>
+              
+              {isDrawing ? (
+                <div className="text-center z-10">
+                  <div className="text-3xl font-black opacity-30 mb-4 animate-pulse uppercase tracking-widest">{randomName}</div>
+                  <div className="text-[12rem] font-black leading-none italic drop-shadow-[8px_8px_0px_#E4000F]">{countdown}</div>
                 </div>
-                
-                <div className={`grid gap-6 items-center justify-center ${currentWinners.length > 4 ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-1 md:grid-cols-2'}`}>
-                  {currentWinners.map((winner, idx) => (
-                    <div key={idx} className="bg-white border-4 border-black p-6 rounded-2xl shadow-[4px_4px_0px_#000] transform hover:scale-105 transition-transform">
-                      <div className="text-3xl md:text-5xl font-black text-black">
-                        {winner}
-                      </div>
+              ) : winners.length > 0 ? (
+                <div className="w-full h-full p-8 flex flex-col items-center animate-in zoom-in-75 duration-300 overflow-hidden">
+                  <div className="bg-[#FBD000] text-black px-8 py-3 border-4 border-black rounded-xl font-black inline-block mb-6 uppercase tracking-[0.2em] shadow-[4px_4px_0px_#000] sticky top-0 z-10">Winners Revealed! ({winners.length})</div>
+                  
+                  <div className="flex-grow w-full overflow-y-auto custom-scrollbar px-4">
+                    <div className={`grid gap-4 justify-center pb-6 ${
+                      winners.length > 30 ? 'grid-cols-4 md:grid-cols-6 lg:grid-cols-10' : 
+                      winners.length > 12 ? 'grid-cols-3 md:grid-cols-4 lg:grid-cols-6' : 
+                      'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                    }`}>
+                      {winners.map((w, i) => (
+                        <div key={i} className={`bg-white text-black border-4 border-black rounded-xl font-black mario-shadow flex items-center justify-center text-center transition-transform hover:scale-105 ${
+                          winners.length > 30 ? 'px-2 py-3 text-xs' : 
+                          winners.length > 12 ? 'px-4 py-4 text-sm' : 
+                          'px-8 py-5 text-2xl'
+                        }`}>
+                          {w}
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
                 </div>
-                
-                <div className="mt-10 text-[#FBD000] text-xl font-black tracking-widest uppercase animate-bounce drop-shadow-[2px_2px_0px_#000]">
-                  CONGRATULATIONS!
+              ) : (
+                <div className="text-center opacity-30 p-10">
+                  <div className="text-[15rem] font-black leading-none mb-6">?</div>
+                  <p className="font-black italic text-xl">名單人數：{names.length}</p>
                 </div>
-              </div>
-            ) : (
-              <div className="text-white text-center space-y-6">
-                <div className="w-24 h-24 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white/20">
-                  <span className="text-5xl">❔</span>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-black tracking-[0.4em] uppercase">Ready to Start</p>
-                  <p className="text-[10px] text-white/50 font-black uppercase tracking-widest">Left in Pool: {names.length}</p>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+           </div>
 
-          <button
-            onClick={startDraw}
-            disabled={isSpinning || names.length === 0}
-            className={`w-full max-w-md py-6 rounded-xl text-3xl font-black border-4 border-black transition-all transform active:scale-95 mario-shadow mario-shadow-active ${isSpinning || names.length === 0 ? 'bg-slate-400 text-slate-600' : 'bg-[#E4000F] text-white hover:bg-[#C3000D]'}`}
-          >
-            {isSpinning ? 'SPINNING...' : 'PRESS START'}
-          </button>
+           <div className="flex flex-col md:flex-row gap-6 mt-6">
+             <button 
+               onClick={startDraw} 
+               disabled={isDrawing || names.length === 0}
+               className={`flex-grow py-10 rounded-[2.5rem] text-5xl font-black border-8 border-black shadow-[12px_12px_0px_#000] active:translate-y-2 active:shadow-none transition-all ${isDrawing ? 'bg-slate-400' : 'bg-[#E4000F] text-white hover:bg-red-700'}`}
+             >
+               {isDrawing ? 'SPINNING...' : 'PUSH TO START'}
+             </button>
+           </div>
         </div>
       </div>
 
+      {/* Record History */}
       {history.length > 0 && (
-        <div className="bg-white p-8 rounded-2xl border-4 border-black shadow-[8px_8px_0px_#000] space-y-8">
-          <div className="flex justify-between items-center pb-4 border-b-4 border-slate-100">
-            <h3 className="text-sm font-black text-black uppercase tracking-widest flex items-center gap-3">
-              <span className="w-4 h-4 bg-[#FBD000] border-2 border-black rounded-full"></span>
-              WINNER LOGS ({history.length})
-            </h3>
-            <button onClick={() => setHistory([])} className="text-[10px] font-black text-slate-300 hover:text-[#E4000F] uppercase transition-colors underline">Clear All</button>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {history.map((record) => (
-              <div key={record.id} className="bg-slate-50 border-4 border-black p-6 rounded-xl flex flex-col gap-4 hover:bg-[#FBD000]/5 transition-all">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="text-[10px] font-black text-[#0050AC] uppercase block mb-1">{record.prizeName}</span>
-                    <h4 className="font-black text-black text-lg">{record.timestamp}</h4>
-                  </div>
-                  <span className="text-[20px]">⭐</span>
-                </div>
-                
-                <div className="flex flex-wrap gap-2">
-                  {record.winners.map((winner, idx) => (
-                    <span key={idx} className="bg-white border-2 border-black px-4 py-2 rounded-lg text-sm font-black text-black flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 bg-[#00A230] rounded-full"></span>
-                      {winner}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+        <div className="bg-black/10 border-4 border-dashed border-black/30 p-8 rounded-[2rem] space-y-6">
+           <h3 className="font-black text-white text-xl uppercase italic tracking-wider">Draw Records History</h3>
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+             {history.map(h => (
+               <div key={h.id} className="bg-white border-4 border-black p-5 rounded-2xl flex flex-col justify-between hover:mario-shadow transition-all">
+                 <div className="space-y-2">
+                   <div className="flex justify-between items-start">
+                     <span className="text-[9px] font-black uppercase text-[#0050AC] bg-[#0050AC]/10 px-2 py-0.5 rounded">{h.timestamp}</span>
+                     <span className="text-[#FBD000] drop-shadow-[1px_1px_0px_#000]">★</span>
+                   </div>
+                   <div className="font-black text-[#E4000F] text-xs uppercase">{h.prizeName} ({h.winners.length} 人)</div>
+                   <div className="font-black text-sm text-slate-800 line-clamp-2">{h.winners.join(', ')}</div>
+                 </div>
+               </div>
+             ))}
+           </div>
         </div>
       )}
     </div>

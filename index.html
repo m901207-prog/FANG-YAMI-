@@ -4,42 +4,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>幸運的抽獎箱</title>
+    <title>幸運的抽獎箱 2.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Noto Sans TC', sans-serif; margin: 0; padding: 0; }
-        .glass-card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border: 4px solid #000;
-            box-shadow: 6px 6px 0px rgba(0, 0, 0, 0.1);
+        body { 
+            font-family: 'Noto Sans TC', sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            background-color: #5C94FC;
+            background-image: radial-gradient(#ffffff22 2px, transparent 2px);
+            background-size: 32px 32px;
         }
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 8px;
+        .mario-border { border: 4px solid #000; }
+        .mario-shadow { box-shadow: 6px 6px 0px #000; }
+        .mario-btn-red { 
+            background-color: #E4000F; color: white; border: 4px solid #000; 
+            box-shadow: 4px 4px 0px #000; transition: all 0.1s;
         }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: #f1f1f1;
+        .mario-btn-red:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px #000; }
+        .mario-btn-yellow { 
+            background-color: #FBD000; color: black; border: 4px solid #000; 
+            box-shadow: 4px 4px 0px #000; transition: all 0.1s;
         }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #E4000F;
-            border: 2px solid #fff;
-            border-radius: 4px;
-        }
-        @keyframes float {
-            0% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
-            100% { transform: translateY(0px); }
-        }
-        .animate-float { animation: float 3s ease-in-out infinite; }
-        .mario-shadow {
-            box-shadow: 4px 4px 0px #000;
-        }
-        .mario-shadow-active:active {
-            box-shadow: 0px 0px 0px #000;
-            transform: translate(2px, 2px);
-        }
+        .mario-btn-yellow:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px #000; }
+        .custom-scrollbar::-webkit-scrollbar { width: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #00000022; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #000; border: 2px solid #5C94FC; }
     </style>
 <script type="importmap">
 {
@@ -53,9 +45,8 @@
 }
 </script>
 </head>
-<body class="bg-[#5C94FC] text-slate-900 selection:bg-[#FBD000] selection:text-black">
+<body class="text-slate-900 selection:bg-[#FBD000] selection:text-black">
     <div id="root"></div>
-    <!-- 顯式引入入口文件 -->
     <script type="module" src="./index.tsx"></script>
 </body>
 </html>

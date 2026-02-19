@@ -21,5 +21,6 @@ export interface LuckyDrawRecord {
 export enum AppTab {
   NAME_MANAGEMENT = 'NAME_MANAGEMENT',
   LUCKY_DRAW = 'LUCKY_DRAW',
-  GROUPING = 'GROUPING'
+  GROUPING = 'GROUPING',
+  SEAT_PLANNER = 'SEAT_PLANNER'
 }

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Participant } from '../types.ts';
 
 interface NameManagerProps {
@@ -7,229 +7,239 @@ interface NameManagerProps {
   setNames: (names: Participant[] | ((prev: Participant[]) => Participant[])) => void;
 }
 
-const MOCK_DATA_SET = [
-  "王小明", "李美玲", "張大華", "陳靜宜", "林智強", 
-  "周杰倫", "蔡依林", "五月天", "郭台銘", "張忠謀", 
-  "黃仁勳", "蘇姿丰", "馬斯克", "賈伯斯", "比爾蓋茲"
-];
+const SAMPLE_DATA = ["王小明", "李美玲", "張大華", "陳靜宜", "林智強", "周杰倫", "蔡依林", "陳奕迅", "林俊傑", "張惠妹", "王小明"];
 
 const NameManager: React.FC<NameManagerProps> = ({ names, setNames }) => {
   const [inputText, setInputText] = useState('');
-  const [googleUrl, setGoogleUrl] = useState('');
+  const [gsUrl, setGsUrl] = useState('');
   const [isImporting, setIsImporting] = useState(false);
-  const [isImportCollapsed, setIsImportCollapsed] = useState(false);
-  const [isPreviewMaximized, setIsPreviewMaximized] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [isFullView, setIsFullView] = useState(false);
+  const [isInputCollapsed, setIsInputCollapsed] = useState(false);
 
-  useEffect(() => {
-    const nameCount = new Map<string, number>();
+  // 計算哪些名字是重複的
+  const duplicateMap = useMemo(() => {
+    const counts: Record<string, number> = {};
     names.forEach(p => {
-      nameCount.set(p.name, (nameCount.get(p.name) || 0) + 1);
+      counts[p.name] = (counts[p.name] || 0) + 1;
     });
+    return counts;
+  }, [names]);
 
-    const updatedNames = names.map(p => ({
-      ...p,
-      isDuplicate: (nameCount.get(p.name) || 0) > 1
-    }));
+  const hasDuplicates = useMemo(() => {
+    return Object.values(duplicateMap).some(count => (count as number) > 1);
+  }, [duplicateMap]);
 
-    const currentIsDuplicateStr = names.map(n => n.isDuplicate).join(',');
-    const nextIsDuplicateStr = updatedNames.map(n => n.isDuplicate).join(',');
-    
-    if (currentIsDuplicateStr !== nextIsDuplicateStr) {
-      setNames(updatedNames);
-    }
-  }, [names.length]); // 僅在長度變化時檢測重複，避免 setNames 無限迴圈
-
-  const addParticipants = (rawNames: string[]) => {
-    const newParticipants = rawNames
+  const addMany = (list: string[]) => {
+    const fresh = list
       .map(n => n.trim())
       .filter(n => n !== '' && n.length < 50)
       .map(n => ({
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `P-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         name: n
       }));
-
-    if (newParticipants.length > 0) {
-      setNames(prev => [...prev, ...newParticipants]);
-    }
+    if (fresh.length > 0) setNames(prev => [...prev, ...fresh]);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRemoveDuplicates = () => {
+    const seen = new Set<string>();
+    const uniqueList: Participant[] = [];
+    names.forEach(p => {
+      if (!seen.has(p.name)) {
+        seen.add(p.name);
+        uniqueList.push(p);
+      }
+    });
+    setNames(uniqueList);
+    alert(`✅ 已清理完畢，保留了 ${uniqueList.length} 位唯一成員。`);
+  };
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      addParticipants(text.split(/\r?\n/));
+    reader.onload = (ev) => {
+      const content = ev.target?.result as string;
+      addMany(content.split(/\r?\n/));
     };
     reader.readAsText(file);
     e.target.value = '';
   };
 
   const handleGoogleImport = async () => {
-    if (!googleUrl) return;
+    if (!gsUrl.includes('docs.google.com/spreadsheets')) {
+      alert("⚠️ 請提供有效的 Google 試算表連結！");
+      return;
+    }
     setIsImporting(true);
     try {
-      let exportUrl = googleUrl;
-      const sheetIdMatch = googleUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-      if (sheetIdMatch) exportUrl = `https://docs.google.com/spreadsheets/d/${sheetIdMatch[1]}/export?format=csv`;
-      const response = await fetch(exportUrl);
-      if (!response.ok) throw new Error('無法讀取該試算表。');
-      const text = await response.text();
-      const rows = text.split(/\r?\n/).map(row => row.split(',').map(cell => cell.replace(/"/g, '').trim()));
-      if (rows.length === 0) return;
-      const headers = rows[0];
-      let nameColIndex = headers.findIndex(h => h.includes('姓名') || h.toLowerCase().includes('name'));
-      if (nameColIndex === -1) nameColIndex = 0;
-      addParticipants(rows.slice(1).map(row => row[nameColIndex]).filter(n => n));
-      setGoogleUrl('');
-    } catch (error: any) {
-      alert(error.message);
+      const match = gsUrl.match(/\/d\/(.+?)\//);
+      if (!match) throw new Error("網址解析失敗");
+      const id = match[1];
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=csv`;
+      
+      const res = await fetch(csvUrl);
+      if (!res.ok) throw new Error("讀取失敗，請確認該表單已設定「知道連結的人均可查看」");
+      
+      const text = await res.text();
+      const rows = text.split(/\r?\n/).map(row => {
+        return row.split(',').map(cell => cell.replace(/^"|"$/g, '').trim());
+      }).filter(row => row.length > 0 && row[0] !== "");
+
+      if (rows.length === 0) throw new Error("試算表內沒有資料");
+
+      const firstRow = rows[0];
+      const nameKeywords = ["姓名", "name", "成員", "participant", "人名", "員工姓名"];
+      let nameColIndex = 0;
+
+      const detectedIndex = firstRow.findIndex(cell => 
+        nameKeywords.some(kw => cell.toLowerCase().includes(kw.toLowerCase()))
+      );
+
+      let finalNames: string[] = [];
+      if (detectedIndex !== -1) {
+        nameColIndex = detectedIndex;
+        finalNames = rows.slice(1).map(row => row[nameColIndex]).filter(Boolean);
+      } else {
+        finalNames = rows.map(row => row[0]).filter(Boolean);
+      }
+
+      addMany(finalNames);
+      setGsUrl('');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "發生未知錯誤");
     } finally {
       setIsImporting(false);
     }
   };
 
-  const removeDuplicates = () => {
-    const seen = new Set();
-    setNames(prev => prev.filter(p => {
-      const isNew = !seen.has(p.name);
-      seen.add(p.name);
-      return isNew;
-    }));
-  };
-
-  const clearAllNames = () => {
-    if (confirm("確定要清空所有名單嗎？此動作不可撤銷。")) {
-      setNames([]);
-    }
-  };
-
-  const exportNames = () => {
-    if (names.length === 0) return;
-    const csvContent = "姓名\n" + names.map(p => p.name).join("\n");
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `PLAYER_LIST_${new Date().toISOString().slice(0,10)}.csv`);
-    link.click();
-  };
-
-  const duplicateCount = names.filter(p => p.isDuplicate).length;
-
   return (
-    <div className="flex flex-col gap-8 w-full relative">
-      
-      {/* 頂部：匯入區塊 */}
-      <div className={`transition-all duration-700 ease-in-out overflow-hidden ${isPreviewMaximized ? 'max-h-0 opacity-0 pointer-events-none' : 'max-h-[1200px] opacity-100'}`}>
-        <div className="glass-card p-8 rounded-[1.5rem] relative overflow-hidden bg-[#FBD000]/10">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-black flex items-center gap-3 cursor-pointer select-none group" onClick={() => setIsImportCollapsed(!isImportCollapsed)}>
-              <span className="p-2.5 bg-[#FBD000] border-4 border-black rounded-xl text-black shadow-[4px_4px_0px_#000]">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4"/></svg>
-              </span>
-              獲取名單金幣
-              <svg className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${isImportCollapsed ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"/></svg>
-            </h2>
-            <button onClick={() => addParticipants(MOCK_DATA_SET)} className="px-5 py-2.5 bg-[#00A230] text-white rounded-xl text-sm font-black border-4 border-black shadow-[4px_4px_0px_#000] hover:translate-y-1 hover:shadow-none transition-all">✨ 範例名單</button>
-          </div>
-
-          <div className={`transition-all duration-500 ease-in-out ${isImportCollapsed ? 'max-h-0 opacity-0' : 'max-h-[1000px] opacity-100 mt-8'}`}>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Google Sheet */}
-              <div className="bg-white p-6 rounded-2xl border-4 border-black shadow-[4px_4px_0px_#000] flex flex-col justify-between">
-                <div>
-                  <label className="block text-sm font-black text-slate-700 mb-3">Google 試算表 (雲端關卡)</label>
-                  <input type="text" value={googleUrl} onChange={(e) => setGoogleUrl(e.target.value)} placeholder="貼上共用連結..." className="w-full px-5 py-3 text-sm bg-slate-50 border-2 border-black rounded-xl focus:border-[#E4000F] outline-none mb-4" />
-                </div>
-                <button onClick={handleGoogleImport} disabled={isImporting || !googleUrl} className="w-full py-3 bg-[#0050AC] text-white rounded-xl font-black text-sm border-2 border-black hover:bg-[#004080]">{isImporting ? 'LOADING...' : '讀取雲端'}</button>
-              </div>
-
-              {/* File Upload */}
-              <div className="space-y-4">
-                <div className="bg-white p-6 rounded-2xl border-4 border-black shadow-[4px_4px_0px_#000]">
-                  <label className="block text-sm font-black text-slate-700 mb-3">上傳 CSV / TXT</label>
-                  <input type="file" accept=".csv,.txt" onChange={handleFileUpload} className="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-2 file:border-black file:text-xs file:font-black file:bg-[#FBD000] file:text-black cursor-pointer" />
-                </div>
-                <div className="bg-white p-6 rounded-2xl border-4 border-black shadow-[4px_4px_0px_#000] flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-black text-slate-700">重複項警報</span>
-                    <span className={`text-[10px] font-black ${duplicateCount > 0 ? 'text-[#E4000F]' : 'text-slate-400'}`}>{duplicateCount > 0 ? `⚠️ 偵測到 ${duplicateCount} 筆重複` : '名單無重複'}</span>
-                  </div>
-                  {duplicateCount > 0 && <button onClick={removeDuplicates} className="px-4 py-2 bg-[#E4000F] text-white text-[10px] font-black rounded-lg border-2 border-black animate-pulse">排除</button>}
-                </div>
-              </div>
-
-              {/* Text Input */}
-              <div className="bg-white p-6 rounded-2xl border-4 border-black shadow-[4px_4px_0px_#000] lg:col-span-1">
-                <label className="block text-sm font-black text-slate-700 mb-3">快速加入姓名</label>
-                <textarea className="w-full h-24 p-4 text-sm border-2 border-black rounded-xl focus:border-[#FBD000] outline-none transition-all resize-none bg-slate-50 mb-3" placeholder="一行一個名字..." value={inputText} onChange={(e) => setInputText(e.target.value)} />
-                <button onClick={() => { addParticipants(inputText.split(/\r?\n/)); setInputText(''); }} disabled={!inputText.trim()} className="w-full bg-black text-white py-3 rounded-xl hover:bg-slate-800 disabled:bg-slate-300 transition-all font-black text-sm">確認加入</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 下方：名單預覽區塊 */}
-      <div className={`transition-all duration-700 ease-in-out w-full ${isPreviewMaximized ? 'h-[calc(100vh-200px)]' : 'min-h-[500px]'}`}>
-        <div className={`glass-card p-8 rounded-[1.5rem] flex flex-col h-full border-4 border-black ${isPreviewMaximized ? 'bg-white' : ''}`}>
-          <div className="flex justify-between items-center mb-8">
-            <div className="flex items-center gap-4">
+    <div className="flex flex-col gap-10">
+      {/* Input Section - Collapsible */}
+      <section className="bg-white/90 border-4 border-black rounded-[2rem] shadow-[10px_10px_0px_#000] overflow-hidden transition-all duration-300">
+        <div 
+          className="flex justify-between items-center p-8 cursor-pointer hover:bg-slate-50 transition-colors"
+          onClick={() => setIsInputCollapsed(!isInputCollapsed)}
+        >
+           <h2 className="text-2xl font-black flex items-center gap-3">
+             <span className="text-3xl">🍄</span> 獲取名單金幣
+           </h2>
+           <div className="flex items-center gap-4">
               <button 
-                onClick={() => setIsPreviewMaximized(!isPreviewMaximized)}
-                className={`p-3 rounded-xl border-2 border-black transition-all flex items-center gap-2 group ${isPreviewMaximized ? 'bg-[#0050AC] text-white' : 'bg-white text-black hover:bg-slate-100'}`}
+                onClick={(e) => { e.stopPropagation(); addMany(SAMPLE_DATA); }}
+                className="hidden md:block px-4 py-2 bg-[#00A230] text-white rounded-xl text-xs font-black border-4 border-black shadow-[4px_4px_0px_#000] active:translate-y-1"
               >
-                <svg className={`w-6 h-6 transition-transform duration-500 ${isPreviewMaximized ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d={isPreviewMaximized ? "M19 9l-7 7-7-7" : "M5 15l7-7 7 7"} />
-                </svg>
-                <span className="text-xs font-black uppercase tracking-widest">{isPreviewMaximized ? "退出全螢幕" : "名單大預覽"}</span>
+                ✨ 填充範例名單
               </button>
-              <h3 className="font-black text-black text-xl flex items-center gap-2">
-                PLAYER LIST
-                <span className="px-3 py-1 bg-[#FBD000] text-black text-sm rounded-lg border-2 border-black font-black">{names.length}</span>
-              </h3>
-            </div>
-            
-            <div className="flex gap-4">
-              {names.length > 0 && (
-                <>
-                  <button onClick={exportNames} className="px-6 py-2.5 bg-[#00A230] text-white hover:bg-[#008026] border-4 border-black rounded-xl text-sm font-black transition-all shadow-[4px_4px_0px_#000] active:shadow-none active:translate-y-1">
-                    💾 導出目前名單 (手動存檔)
-                  </button>
-                  <button onClick={clearAllNames} className="px-6 py-2.5 bg-white text-[#E4000F] hover:bg-[#E4000F] hover:text-white border-4 border-[#E4000F] rounded-xl text-sm font-black transition-all">
-                    GAME OVER (清空)
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-          
-          <div ref={scrollRef} className={`flex-grow overflow-y-auto custom-scrollbar pr-2 grid gap-5 ${isPreviewMaximized ? 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4'}`}>
-            {names.length === 0 ? (
-              <div className="flex flex-col items-center justify-center text-slate-300 text-center col-span-full h-full py-20">
-                <p className="text-lg font-black text-white drop-shadow-[2px_2px_0px_#000]">名單目前是空的...</p>
-                <p className="text-xs text-white/50 uppercase mt-2 font-black tracking-widest">NO PLAYERS IMPORTED</p>
+              <div className="w-10 h-10 flex items-center justify-center border-4 border-black rounded-xl bg-white font-black">
+                {isInputCollapsed ? '▼' : '▲'}
               </div>
-            ) : (
-              names.map((p) => (
-                <div key={p.id} className={`group flex justify-between items-center p-4 rounded-xl border-4 transition-all ${p.isDuplicate ? 'bg-[#E4000F]/10 border-[#E4000F]' : 'bg-white border-black hover:bg-[#FBD000]/10 hover:-translate-y-1 shadow-[2px_2px_0px_#000]'}`}>
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    <div className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-black border-2 border-black ${p.isDuplicate ? 'bg-[#E4000F] text-white' : 'bg-[#00A230] text-white'}`}>
-                      {p.name.charAt(0)}
-                    </div>
-                    <span className={`text-sm font-black truncate ${p.isDuplicate ? 'text-[#E4000F]' : 'text-black'}`}>{p.name}</span>
-                  </div>
-                  <button onClick={() => setNames(prev => prev.filter(n => n.id !== p.id))} className="p-1 text-slate-300 hover:text-[#E4000F] transition-all opacity-0 group-hover:opacity-100">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
+           </div>
         </div>
-      </div>
+
+        {!isInputCollapsed && (
+          <div className="px-8 pb-8 animate-in slide-in-from-top-4 duration-300">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div className="space-y-6">
+                  <div className="p-6 bg-slate-50 border-4 border-black rounded-2xl">
+                     <label className="block text-[10px] font-black uppercase text-slate-400 mb-3">1. 上傳 CSV / TXT</label>
+                     <input type="file" accept=".csv,.txt" onChange={handleFile} className="w-full text-sm font-bold" />
+                  </div>
+                  <div className="p-6 bg-slate-50 border-4 border-black rounded-2xl">
+                     <label className="block text-[10px] font-black uppercase text-slate-400 mb-3">2. 快速手動輸入</label>
+                     <div className="flex gap-2">
+                       <input 
+                         type="text" 
+                         value={inputText}
+                         placeholder="輸入姓名並 Enter..."
+                         onChange={e => setInputText(e.target.value)}
+                         onKeyDown={e => { if(e.key==='Enter' && inputText.trim()){ addMany([inputText]); setInputText(''); } }}
+                         className="flex-1 px-4 py-2 border-2 border-black rounded-lg font-bold outline-none focus:bg-[#FBD000]/10"
+                       />
+                       <button onClick={() => { if(inputText.trim()){ addMany([inputText]); setInputText(''); } }} className="mario-btn-yellow px-6 font-black rounded-lg">GO</button>
+                     </div>
+                  </div>
+               </div>
+
+               <div className="p-6 bg-[#00A230]/10 border-4 border-black rounded-2xl flex flex-col justify-between">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-[#00A230] mb-3">3. Google 試算表同步 (Warp Pipe)</label>
+                    <textarea 
+                      value={gsUrl}
+                      onChange={e => setGsUrl(e.target.value)}
+                      placeholder="在此貼上 Google 試算表網址..."
+                      className="w-full h-24 p-4 border-4 border-black rounded-xl font-bold text-sm mb-4 outline-none focus:border-[#00A230]"
+                    />
+                  </div>
+                  <button 
+                    onClick={handleGoogleImport}
+                    disabled={isImporting || !gsUrl}
+                    className={`w-full py-3 rounded-xl font-black text-white border-4 border-black shadow-[4px_4px_0px_#000] active:translate-y-1 transition-all ${isImporting ? 'bg-slate-400' : 'bg-[#00A230] hover:bg-[#008026]'}`}
+                  >
+                    {isImporting ? '正在解析...' : '立即同步試算表'}
+                  </button>
+               </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* List Display Section */}
+      <section className={`bg-white border-4 border-black p-8 rounded-[2rem] shadow-[10px_10px_0px_#000] flex flex-col transition-all ${isFullView ? 'min-h-[80vh]' : 'min-h-[500px]'}`}>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+           <h3 className="text-xl font-black flex items-center gap-4 text-black">
+             PLAYER LIST 
+             <span className="bg-[#0050AC] text-white px-4 py-1 rounded-full border-2 border-black text-sm">
+               {names.length}
+             </span>
+             {hasDuplicates && (
+               <span className="text-xs bg-[#E4000F] text-white px-3 py-1 rounded-full animate-pulse border-2 border-black">
+                 偵測到重複項！
+               </span>
+             )}
+           </h3>
+           <div className="flex flex-wrap gap-4">
+              {hasDuplicates && (
+                <button 
+                  onClick={handleRemoveDuplicates}
+                  className="mario-btn-yellow px-4 py-2 text-xs font-black rounded-xl animate-bounce"
+                >
+                  🧹 移除重複姓名
+                </button>
+              )}
+              <button onClick={() => setIsFullView(!isFullView)} className="px-4 py-2 bg-slate-100 border-4 border-black rounded-xl text-xs font-black shadow-[4px_4px_0px_#000] active:translate-y-1 active:shadow-none">
+                {isFullView ? '收起名單' : '全螢幕檢視'}
+              </button>
+           </div>
+        </div>
+
+        <div className={`flex-grow overflow-y-auto custom-scrollbar pr-4 grid gap-4 ${isFullView ? 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+          {names.length === 0 ? (
+            <div className="col-span-full py-24 text-center">
+              <div className="text-6xl mb-6 opacity-20">👻</div>
+              <p className="text-slate-300 font-black italic text-xl">目前還沒有名單進入遊戲...</p>
+            </div>
+          ) : (
+            names.map(p => {
+              const isDup = (duplicateMap[p.name] as number) > 1;
+              return (
+                <div 
+                  key={p.id} 
+                  className={`p-4 border-4 rounded-xl flex justify-between items-center group transition-colors mario-shadow ${isDup ? 'bg-red-50 border-red-600' : 'bg-white border-black hover:bg-[#FBD000]'}`}
+                >
+                  <div className="flex flex-col overflow-hidden">
+                    <span className={`font-black truncate ${isDup ? 'text-red-700' : 'text-black'}`}>{p.name}</span>
+                    {isDup && <span className="text-[9px] font-black text-red-500 uppercase italic">Duplicate!</span>}
+                  </div>
+                  <button 
+                    onClick={() => setNames(prev => prev.filter(n => n.id !== p.id))}
+                    className="w-8 h-8 flex items-center justify-center bg-black text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                  >✕</button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
     </div>
   );
 };

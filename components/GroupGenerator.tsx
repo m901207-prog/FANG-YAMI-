@@ -6,7 +6,7 @@ import { generateCreativeGroupNames, CreativeGroupName } from '../services/gemin
 interface GroupGeneratorProps {
   names: Participant[];
 }
-// ... 其餘代碼保持不變 ...
+
 const GroupGenerator: React.FC<GroupGeneratorProps> = ({ names }) => {
   const [groupSize, setGroupSize] = useState(4);
   const [isLoading, setIsLoading] = useState(false);

@@ -1,10 +1,9 @@
 
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 
-// 獲取 API Key 並初始化
+// Always use named parameter for apiKey and obtain it from process.env.API_KEY
 const getAI = () => {
-  const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : '';
-  return new GoogleGenAI({ apiKey: apiKey || '' });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 export interface CreativeGroupName {
@@ -50,6 +49,7 @@ export const generateCreativeGroupNames = async (count: number, context?: string
       }
     });
 
+    // Access .text property directly as per Gemini API guidelines
     const responseText = response.text?.trim();
     if (!responseText) throw new Error("Empty response");
     return JSON.parse(responseText) as CreativeGroupName[];
